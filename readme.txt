@@ -1,11 +1,11 @@
 === WPWH - WP Reset Webhook Integration ===
 Author URI: https://ironikus.com/
 Plugin URI: https://ironikus.com/downloads/wp-reset-webhook-integration/
-Contributors: ironikusagency
+Contributors: ironikus
 Donate link: https://paypal.me/ironikus
 Tags: media files, webhooks, automation, ironikus, wp reset, reset, reset wordpress
 Requires at least: 4.7
-Tested up to: 5.1
+Tested up to: 5.6
 Stable Tag: 1.0.2
 License: GNU Version 3 or Any Later Version
 
