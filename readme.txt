@@ -5,8 +5,8 @@ Contributors: ironikus
 Donate link: https://paypal.me/ironikus
 Tags: media files, webhooks, automation, ironikus, wp reset, reset, reset wordpress
 Requires at least: 4.7
-Tested up to: 5.6
-Stable Tag: 1.0.2
+Tested up to: 5.7
+Stable Tag: 1.1.0
 License: GNU Version 3 or Any Later Version
 
 A WP Webhooks extension to integrate WP Reset
@@ -41,6 +41,11 @@ Feel free to message us in case you want special features - We love to help!
 
 
 == Changelog ==
+
+= 1.1.0: May 02, 2021 =
+* Feature: Full compatibility with all new standards of WP Webhooks 3.1.0 and WP Webhooks 4.1.0
+* Tweak: Remove unnecessary variable output
+* Tweak optimize descriptions
 
 = 1.0.2: March 23, 2019 =
 * Feature: ompatibility with WP Webhooks Pro

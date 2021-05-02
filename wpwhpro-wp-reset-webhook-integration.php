@@ -1,9 +1,9 @@
 <?php
 /**
- * Plugin Name: WPWH - WP Reset Webhook Integration
+ * Plugin Name: WP Webhooks - WP Reset Webhook Integration
  * Plugin URI: https://ironikus.com/downloads/wp-reset-webhook-integration/
  * Description: A WP Webhooks Pro extension to integrate WP Reset
- * Version: 1.0.2
+ * Version: 1.1.0
  * Author: Ironikus
  * Author URI: https://ironikus.com/
  * License: GPL2
@@ -21,10 +21,16 @@ if( !class_exists( 'WP_Webhooks_WP_Reset_Integration' ) ){
 
 	    private $wpwhpro_wp_reset = false;
 	    private $wpr_is_active = null;
+	    private $wpr_use_new_filter = null;
 
 		public function __construct() {
 
-			add_action( 'wpwhpro/webhooks/add_webhooks_actions', array( $this, 'add_webhook_actions' ), 20, 3 );
+			if( $this->wpwh_use_new_action_filter() ){
+				add_filter( 'wpwhpro/webhooks/add_webhook_actions', array( $this, 'add_webhook_actions' ), 20, 4 );
+			} else {
+				add_action( 'wpwhpro/webhooks/add_webhooks_actions', array( $this, 'add_webhook_actions' ), 20, 3 );
+			}
+			
 			add_filter( 'wpwhpro/webhooks/get_webhooks_actions', array( $this, 'add_webhook_actions_content' ), 20 );
 			add_action( 'admin_notices', array( $this, 'wpwhpro_wpr_throw_admin_notices' ), 100 );
 		}
@@ -44,6 +50,35 @@ if( !class_exists( 'WP_Webhooks_WP_Reset_Integration' ) ){
 		 * ###
 		 * ######################
 		 */
+
+		 public function wpwh_use_new_action_filter(){
+
+			if( $this->wpr_use_new_filter !== null ){
+				return $this->wpr_use_new_filter;
+			}
+
+			$return = false;
+			$version_current = '0';
+			$version_needed = '0';
+	
+			if( defined( 'WPWHPRO_VERSION' ) ){
+				$version_current = WPWHPRO_VERSION;
+				$version_needed = '4.1.0';
+			}
+	
+			if( defined( 'WPWH_VERSION' ) ){
+				$version_current = WPWH_VERSION;
+				$version_needed = '3.1.0';
+			}
+	
+			if( version_compare( (string) $version_current, (string) $version_needed, '>=') ){
+				$return = true;
+			}
+
+			$this->wpr_use_new_filter = $return;
+
+			return $return;
+		 }
 
 		public function is_wp_reset_active(){
 
@@ -159,66 +194,76 @@ if( !class_exists( 'WP_Webhooks_WP_Reset_Integration' ) ){
 		 * all of the currently activated triggers.
 		 *
 		 * We always send three different properties with the defined wehook.
+		 * @param $response - the data we send back to the webhook action
 		 * @param $action - the defined action defined within the action_delete_user_content function
 		 * @param $webhook - The webhook itself
 		 * @param $api_key - an api_key if defined
 		 */
-		public function add_webhook_actions( $action, $webhook, $api_key ){
+		public function add_webhook_actions( $response, $action, $webhook, $api_key = '' ){
 
 			if( ! $this->is_wp_reset_active() ){
-				return;
+				return $response;
 			}
 
-			$active_webhooks = WPWHPRO()->settings->get_active_webhooks();
+			//Backwards compatibility prior 4.1.0 (wpwhpro) or 3.1.0 (wpwh)
+			if( ! $this->wpwh_use_new_action_filter() ){
+				$api_key = $webhook;
+				$webhook = $action;
+				$action = $response;
 
-			$available_actions = $active_webhooks['actions'];
+				$active_webhooks = WPWHPRO()->settings->get_active_webhooks();
+				$available_actions = $active_webhooks['actions'];
+
+				if( ! isset( $available_actions[ $action ] ) ){
+					return $response;
+				}
+			}
+
+			$return_data = null;
 
 			switch( $action ){
 				case 'reset_wp':
-					if( isset( $available_actions['reset_wp'] ) ){
-						$this->action_reset_wp();
-					}
+					$return_data = $this->action_reset_wp();
 					break;
 				case 'delete_transients':
-					if( isset( $available_actions['delete_transients'] ) ){
-						$this->action_delete_transients();
-					}
+					$return_data = $this->action_delete_transients();
 					break;
 				case 'clean_uploads_folder':
-					if( isset( $available_actions['clean_uploads_folder'] ) ){
-						var_dump('workz');
-						$this->action_clean_uploads_folder();
-					}
+					$return_data = $this->action_clean_uploads_folder();
 					break;
 				case 'delete_themes':
-					if( isset( $available_actions['delete_themes'] ) ){
-						$this->action_delete_themes();
-					}
+					$return_data = $this->action_delete_themes();
 					break;
 				case 'delete_plugins':
-					if( isset( $available_actions['delete_plugins'] ) ){
-						$this->action_delete_plugins();
-					}
+					$return_data = $this->action_delete_plugins();
 					break;
 				case 'truncate_custom_tables':
-					if( isset( $available_actions['truncate_custom_tables'] ) ){
-						$this->action_truncate_custom_tables();
-					}
+					$return_data = $this->action_truncate_custom_tables();
 					break;
 				case 'delete_custom_tables':
-					if( isset( $available_actions['delete_custom_tables'] ) ){
-						$this->action_delete_custom_tables();
-					}
+					$return_data = $this->action_delete_custom_tables();
 					break;
 				case 'delete_htaccess':
-					if( isset( $available_actions['delete_htaccess'] ) ){
-						$this->action_delete_htaccess();
-					}
+					$return_data = $this->action_delete_htaccess();
 					break;
 			}
+
+			//Make sure we only fire the response in case the old logic is used
+			if( $return_data !== null && ! $this->wpwh_use_new_action_filter() ){
+				WPWHPRO()->webhook->echo_response_data( $return_data );
+				die();
+			}
+
+			if( $return_data !== null ){
+				$response = $return_data;
+			}
+			
+			return $response;
 		}
 
 		public function action_reset_wp_content(){
+
+			$translation_ident = "action-reset_wp-content";
 
 			$parameter = array(
 				'confirm'            => array( 'required' => true, 'short_description' => WPWHPRO()->helpers->translate( 'Please set this value to "yes". If not set, nothing gets reset.', 'action-reset_wp-content' ) ),
@@ -235,6 +280,40 @@ if( !class_exists( 'WP_Webhooks_WP_Reset_Integration' ) ){
 			);
 
 			ob_start();
+		?>
+<?php echo WPWHPRO()->helpers->translate( "The <strong>do_action</strong> argument is an advanced webhook for developers. It allows you to fire a custom WordPress hook after the <strong>reset_wp</strong> action was fired.", $translation_ident ); ?>
+<br>
+<?php echo WPWHPRO()->helpers->translate( "You can use it to trigger further logic after the webhook action. Here's an example:", $translation_ident ); ?>
+<br>
+<br>
+<?php echo WPWHPRO()->helpers->translate( "Let's assume you set for the <strong>do_action</strong> parameter <strong>fire_this_function</strong>. In this case, we will trigger an action with the hook name <strong>fire_this_function</strong>. Here's how the code would look in this case:", $translation_ident ); ?>
+<pre>add_action( 'fire_this_function', 'my_custom_callback_function', 20, 3 );
+function my_custom_callback_function( $reactivate_theme, $reactivate_plugins, $reactivate_wpreset ){
+    //run your custom logic in here
+}
+</pre>
+<?php echo WPWHPRO()->helpers->translate( "Here's an explanation to each of the variables that are sent over within the custom function.", $translation_ident ); ?>
+<ol>
+    <li>
+        <strong>$reactivate_theme</strong> (bool)
+        <br>
+        <?php echo WPWHPRO()->helpers->translate( "True if you chose to reactivate installed themes.", $translation_ident ); ?>
+    </li>
+    <li>
+        <strong>$reactivate_plugins</strong> (bool)
+        <br>
+        <?php echo WPWHPRO()->helpers->translate( "True if you chose to reactivate installed plugins.", $translation_ident ); ?>
+    </li>
+    <li>
+        <strong>$reactivate_wpreset</strong> (bool)
+        <br>
+        <?php echo WPWHPRO()->helpers->translate( "True if you chose to reactivate WP Reset.", $translation_ident ); ?>
+    </li>
+</ol>
+		<?php
+		$parameter['do_action']['description'] = ob_get_clean();
+
+			ob_start();
 			?>
             <pre>
 $return_args = array(
@@ -246,11 +325,24 @@ $return_args = array(
 			$returns_code = ob_get_clean();
 
 			ob_start();
-			?>
-                <p><?php echo WPWHPRO()->helpers->translate( 'This webhook enables you to completely reset WordPress. This also results in deactivating this plugin and deleting all its data.', 'action-reset_wp-content' ); ?></p>
-                <p><?php echo WPWHPRO()->helpers->translate( 'The do_action parameter includes the following attributes: $return_args, $confirm, $count', 'action-reset_wp-content' ); ?></p>
-            <?php
-			$description = ob_get_clean();
+?>
+<?php echo WPWHPRO()->helpers->translate( "This webhook action is used to reset WordPress, using the WP Reset plugin, via a webhook call.", $translation_ident ); ?>
+<br>
+<br>
+<?php echo WPWHPRO()->helpers->translate( "This description is uniquely made for the <strong>reset_wp</strong> webhook action.", $translation_ident ); ?>
+<br>
+<?php echo WPWHPRO()->helpers->translate( "In case you want to first understand on how to setup webhook actions in general, please check out the following manuals:", $translation_ident ); ?>
+<br>
+<a title="Go to ironikus.com/docs" target="_blank" href="https://ironikus.com/docs/article-categories/get-started/">https://ironikus.com/docs/article-categories/get-started/</a>
+<br><br>
+<h4><?php echo WPWHPRO()->helpers->translate( "How to use <strong>reset_wp</strong>", $translation_ident ); ?></h4>
+<ol>
+    <li><?php echo WPWHPRO()->helpers->translate( "The first argument you need to set within your webhook action request is the <strong>action</strong> argument. This argument is always required. Please set it to <strong>reset_wp</strong>.", $translation_ident ); ?></li>
+    <li><?php echo WPWHPRO()->helpers->translate( "It is also required to set the argument <strong>confirm</strong>, which by default is set to \"no\". This is a secondary security measurement to make sure you do not accidentially reset your website.", $translation_ident ); ?></li>
+    <li><?php echo WPWHPRO()->helpers->translate( "All the other arguments are optional and just extend the reset of WordPress.", $translation_ident ); ?></li>
+</ol>
+<?php
+		$description = ob_get_clean();
 
 			return array(
 				'action'            => 'reset_wp', //required
@@ -265,6 +357,8 @@ $return_args = array(
 
 		public function action_delete_transients_content(){
 
+			$translation_ident = "action-delete_transients-content";
+
 			$parameter = array(
 				'confirm'            => array( 'required' => true, 'short_description' => WPWHPRO()->helpers->translate( 'Please set this value to "yes". If not set, no transients are deleted.', 'action-delete_transients-content' ) ),
 				'do_action'      => array( 'short_description' => WPWHPRO()->helpers->translate( 'Advanced: Register a custom action after Webhooks Pro fires this webhook. More infos are in the description.', 'action-delete_transients-content' ) )
@@ -275,6 +369,40 @@ $return_args = array(
 				'data'        => array( 'short_description' => WPWHPRO()->helpers->translate( '(mixed) Count of all the deleted transients.', 'action-create_url_attachment-content' ) ),
 				'msg'        => array( 'short_description' => WPWHPRO()->helpers->translate( '(string) A message with more information about the current request. E.g. array( \'msg\' => "This action was successful." )', 'action-delete_transients-content' ) ),
 			);
+
+			ob_start();
+		?>
+<?php echo WPWHPRO()->helpers->translate( "The <strong>do_action</strong> argument is an advanced webhook for developers. It allows you to fire a custom WordPress hook after the <strong>delete_transients</strong> action was fired.", $translation_ident ); ?>
+<br>
+<?php echo WPWHPRO()->helpers->translate( "You can use it to trigger further logic after the webhook action. Here's an example:", $translation_ident ); ?>
+<br>
+<br>
+<?php echo WPWHPRO()->helpers->translate( "Let's assume you set for the <strong>do_action</strong> parameter <strong>fire_this_function</strong>. In this case, we will trigger an action with the hook name <strong>fire_this_function</strong>. Here's how the code would look in this case:", $translation_ident ); ?>
+<pre>add_action( 'fire_this_function', 'my_custom_callback_function', 20, 3 );
+function my_custom_callback_function( $return_args, $confirm, $count ){
+    //run your custom logic in here
+}
+</pre>
+<?php echo WPWHPRO()->helpers->translate( "Here's an explanation to each of the variables that are sent over within the custom function.", $translation_ident ); ?>
+<ol>
+    <li>
+        <strong>$return_args</strong> (array)
+        <br>
+        <?php echo WPWHPRO()->helpers->translate( "All the values that are sent back as a response the the initial webhook action caller.", $translation_ident ); ?>
+    </li>
+    <li>
+        <strong>$confirm</strong> (bool)
+        <br>
+        <?php echo WPWHPRO()->helpers->translate( "Whether you confirmed the deletion or not.", $translation_ident ); ?>
+    </li>
+    <li>
+        <strong>$count</strong> (integer)
+        <br>
+        <?php echo WPWHPRO()->helpers->translate( "The number of deleted transients.", $translation_ident ); ?>
+    </li>
+</ol>
+		<?php
+		$parameter['do_action']['description'] = ob_get_clean();
 
 			ob_start();
 			?>
@@ -291,11 +419,24 @@ $return_args = array(
 			$returns_code = ob_get_clean();
 
 			ob_start();
-			?>
-                <p><?php echo WPWHPRO()->helpers->translate( 'This webhook enables you to delete all transients on your website. You can also fire a custom action by defining the action name itself.', 'action-delete_transients-content' ); ?></p>
-                <p><?php echo WPWHPRO()->helpers->translate( 'The do_action parameter includes the following attributes: $return_args, $confirm, $count', 'action-delete_transients-content' ); ?></p>
-            <?php
-			$description = ob_get_clean();
+?>
+<?php echo WPWHPRO()->helpers->translate( "This webhook action is used to delete all existing tranrients via a webhook call.", $translation_ident ); ?>
+<br>
+<br>
+<?php echo WPWHPRO()->helpers->translate( "This description is uniquely made for the <strong>delete_transients</strong> webhook action.", $translation_ident ); ?>
+<br>
+<?php echo WPWHPRO()->helpers->translate( "In case you want to first understand on how to setup webhook actions in general, please check out the following manuals:", $translation_ident ); ?>
+<br>
+<a title="Go to ironikus.com/docs" target="_blank" href="https://ironikus.com/docs/article-categories/get-started/">https://ironikus.com/docs/article-categories/get-started/</a>
+<br><br>
+<h4><?php echo WPWHPRO()->helpers->translate( "How to use <strong>delete_transients</strong>", $translation_ident ); ?></h4>
+<ol>
+    <li><?php echo WPWHPRO()->helpers->translate( "The first argument you need to set within your webhook action request is the <strong>action</strong> argument. This argument is always required. Please set it to <strong>delete_transients</strong>.", $translation_ident ); ?></li>
+    <li><?php echo WPWHPRO()->helpers->translate( "It is also required to set the argument <strong>confirm</strong>, which by default is set to \"no\". This is a secondary security measurement to make sure you do not accidentially delete your transients.", $translation_ident ); ?></li>
+    <li><?php echo WPWHPRO()->helpers->translate( "All the other arguments are optional and just extend the reset of WordPress.", $translation_ident ); ?></li>
+</ol>
+<?php
+		$description = ob_get_clean();
 
 			return array(
 				'action'            => 'delete_transients', //required
@@ -625,9 +766,7 @@ $return_args = array(
 				do_action( $do_action, $reactivate_theme, $reactivate_plugins, $reactivate_wpreset );
 			}
 
-			WPWHPRO()->webhook->echo_response_data( $return_args );
-
-			die();
+			return $return_args;
 		}
 
 		public function action_delete_transients() {
@@ -662,9 +801,7 @@ $return_args = array(
 				do_action( $do_action, $return_args, $confirm, $count );
 			}
 
-			WPWHPRO()->webhook->echo_response_data( $return_args );
-
-			die();
+			return $return_args;
 		}
 
 		public function action_clean_uploads_folder() {
@@ -699,9 +836,7 @@ $return_args = array(
 				do_action( $do_action, $return_args, $confirm, $count );
 			}
 
-			WPWHPRO()->webhook->echo_response_data( $return_args );
-
-			die();
+			return $return_args;
 		}
 
 		public function action_delete_themes() {
@@ -741,9 +876,7 @@ $return_args = array(
 				do_action( $do_action, $return_args, $confirm, $count );
 			}
 
-			WPWHPRO()->webhook->echo_response_data( $return_args );
-
-			die();
+			return $return_args;
 		}
 
 		public function action_delete_plugins() {
@@ -784,9 +917,7 @@ $return_args = array(
 				do_action( $do_action, $return_args, $confirm, $count );
 			}
 
-			WPWHPRO()->webhook->echo_response_data( $return_args );
-
-			die();
+			return $return_args;
 		}
 
 		public function action_truncate_custom_tables() {
@@ -821,9 +952,7 @@ $return_args = array(
 				do_action( $do_action, $return_args, $confirm, $count );
 			}
 
-			WPWHPRO()->webhook->echo_response_data( $return_args );
-
-			die();
+			return $return_args;
 		}
 
 		public function action_delete_custom_tables() {
@@ -858,9 +987,7 @@ $return_args = array(
 				do_action( $do_action, $return_args, $confirm, $count );
 			}
 
-			WPWHPRO()->webhook->echo_response_data( $return_args );
-
-			die();
+			return $return_args;
 		}
 
 		public function action_delete_htaccess() {
@@ -895,9 +1022,7 @@ $return_args = array(
 				do_action( $do_action, $return_args, $confirm, $response );
 			}
 
-			WPWHPRO()->webhook->echo_response_data( $return_args );
-
-			die();
+			return $return_args;
 		}
 
 	} // End class
